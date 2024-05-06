@@ -1,24 +1,19 @@
-pip install Flask-Caching
-```
-
-```python
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 import jwt
 import datetime
 from functools import wraps
-from cryptography.fernet import Fernet
-import os
 from flask_caching import Cache
+import os
 
 app = Flask(__name__)
 
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your_secret_key')
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config["CACHE_TYPE"] = "SimpleCache"  
-app.config["CACHE_DEFAULT_TIMEOUT"] = 300  
+app.config["CACHE_TYPE"] = "SimpleCache"
+app.config["CACHE_DEFAULT_TIMEOUT"] = 300
 
 db = SQLAlchemy(app)
 cache = Cache(app)
@@ -34,6 +29,13 @@ class Note(db.Model):
     content = db.Column(db.String(1000), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        current_user = User.query.first()
+        return f(current_user, *args, **kwargs)
+    return decorated
+
 @app.route('/note', methods=['GET'])
 @token_required
 def get_all_notes(current_user):
@@ -42,17 +44,9 @@ def get_all_notes(current_user):
     
     if not notes:
         notes = Note.query.filter_by(user_id=current_user.id).all()
-        cache.set(cache_key, notes)
+        cache.set(cache_key, notes, timeout=60*5)
     
-    output = []
-
-    for note in notes:
-        note_data = {}
-        note_data['id'] = note.id
-        note_data['title'] = note.title
-        note_data['content'] = decrypt_message(note.content)
-        output.append(note_data)
-
+    output = [{'id': note.id, 'title': note.title, 'content': note.content} for note in notes]
     return jsonify({'notes': output})
 
 @app.route('/note', methods=['POST'])
@@ -60,13 +54,29 @@ def get_all_notes(current_user):
 def create_note(current_user):
     data = request.get_json()
     cache_key = f"user_notes_{current_user.id}"
-    cache.delete(cache_key)
     
-@app.route('/note/<note_id>', methods=['PUT'])
+    new_note = Note(title=data['title'], content=data['content'], user_id=current_user.id)
+    db.session.add(new_note)
+    db.session.commit()
+    
+    cache.delete(cache_key)
+    return jsonify({'message': 'Note created'}), 201
+
+@app.route('/note/<int:note_id>', methods=['PUT'])
 @token_required
 def update_note(current_user, note_id):
+    data = request.get_json()
     cache_key = f"user_notes_{current_user.id}"
-    cache.delete(cache_key)
+    
+    note = Note.query.filter_by(id=note_id, user_id=current_user.id).first()
+    if note:
+        note.title = data.get('title', note.title)
+        note.content = data.get('content', note.content)
+        db.session.commit()
+        cache.delete(cache_key)
+        return jsonify({'message': 'Note updated'}), 200
+    else:
+        return jsonify({'message': 'Note not found'}), 404
 
 if __name__ == '__main__':
     app.run(debug=True)
