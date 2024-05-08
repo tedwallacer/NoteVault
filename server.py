@@ -9,72 +9,73 @@ import os
 
 app = Flask(__name__)
 
-app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your_secret_key')
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site.db'
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'your_default_secret_key_here')
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///site_database.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config["CACHE_TYPE"] = "SimpleCache"
 app.config["CACHE_DEFAULT_TIMEOUT"] = 300
 
 db = SQLAlchemy(app)
-cache = Cache(app)
+cache_manager = Cache(app)
 
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
-    password = db.Column(db.String(80), nullable=False)
+    password_hash = db.Column(db.String(80), nullable=False)
 
 class Note(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(100), nullable=False)
     content = db.Column(db.String(1000), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    owner_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
 
-def token_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        current_user = User.query.first()
-        return f(current_user, *args, **kwargs)
-    return decorated
+def verify_token(func):
+    @wraps(func)
+    def decorator(*args, **kwargs):
+        authenticated_user = User.query.first()
+        return func(authenticated_user, *args, **kwargs)
+    return decorator
 
 @app.route('/note', methods=['GET'])
-@token_required
-def get_all_notes(current_user):
-    cache_key = f"user_notes_{current_user.id}"
-    notes = cache.get(cache_key)
+@verify_token
+def fetch_all_notes(authenticated_user):
+    notes_cache_key = f"user_notes_{authenticated_user.id}"
+    cached_notes = cache_manager.get(notes_cache_key)
     
-    if not notes:
-        notes = Note.query.filter_by(user_id=current_user.id).all()
-        cache.set(cache_key, notes, timeout=60*5)
+    if not cached_notes:
+        user_notes = Note.query.filter_by(user_id=authenticated_user.id).all()
+        cache_manager.set(notes_cache_key, user_notes, timeout=60*5)
+        cached_notes = user_notes
     
-    output = [{'id': note.id, 'title': note.title, 'content': note.content} for note in notes]
-    return jsonify({'notes': output})
+    notes_response = [{'id': note.id, 'title': note.title, 'content': note.content} for note in cached_notes]
+    return jsonify({'notes': notes_response})
 
 @app.route('/note', methods=['POST'])
-@token_required
-def create_note(current_user):
-    data = request.get_json()
-    cache_key = f"user_notes_{current_user.id}"
+@verify_token
+def create_new_note(authenticated_user):
+    note_data = request.get_json()
+    notes_cache_key = f"user_notes_{authenticated_user.id}"
     
-    new_note = Note(title=data['title'], content=data['content'], user_id=current_user.id)
-    db.session.add(new_note)
+    note_instance = Note(title=note_data['title'], content=note_data['content'], user_id=authenticated_user.id)
+    db.session.add(note_instance)
     db.session.commit()
     
-    cache.delete(cache_key)
-    return jsonify({'message': 'Note created'}), 201
+    cache_manager.delete(notes_cache_key)
+    return jsonify({'message': 'Note successfully created'}), 201
 
 @app.route('/note/<int:note_id>', methods=['PUT'])
-@token_required
-def update_note(current_user, note_id):
-    data = request.get_json()
-    cache_key = f"user_notes_{current_user.id}"
+@verify_token
+def update_existing_note(authenticated_user, note_id):
+    received_data = request.get_json()
+    notes_cache_key = f"user_notes_{authenticated_user.id}"
     
-    note = Note.query.filter_by(id=note_id, user_id=current_user.id).first()
-    if note:
-        note.title = data.get('title', note.title)
-        note.content = data.get('content', note.content)
+    target_note = Note.query.filter_by(id=note_id, user_id=authenticated_user.id).first()
+    if target_note:
+        target_note.title = received_data.get('title', target_note.title)
+        target_note.content = received_data.get('content', target_note.content)
         db.session.commit()
-        cache.delete(cache_key)
-        return jsonify({'message': 'Note updated'}), 200
+        cache_manager.delete(notes_cache_key)
+        return jsonify({'message': 'Note successfully updated'}), 200
     else:
         return jsonify({'message': 'Note not found'}), 404
 
