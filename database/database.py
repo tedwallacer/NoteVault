@@ -57,13 +57,27 @@ class DatabaseManager:
         conn.commit()
 
     def get_user_notes(self, user_id):
-        cursor.execute("SELECT note FROM notes WHERE user_id=?", (user_id,))
+        cursor.execute("SELECT id, note FROM notes WHERE user_id=?", (user_id,))
         encrypted_notes = cursor.fetchall()
-        decrypted_notes = [self.decrypt_data(note[0]) for note in encrypted_notes]
+        decrypted_notes = [(note_id, self.decrypt_data(note[1])) for note_id, note in encrypted_notes]
         return decrypted_notes
+
+    def update_note(self, note_id, new_note):
+        encrypted_note = self.encrypt_data(new_note)
+        cursor.execute("UPDATE notes SET note = ? WHERE id = ?", (encrypted_note, note_id))
+        conn.commit()
 
 if __name__ == '__main__':
     db_manager = DatabaseManager()
-    user_id_example = 1
+    user_id_example = 1  # Example User ID
+    if True:  # Placeholder condition for either adding a note, updating it, or fetching user notes
+        # db_manager.add_user("username", "password")
+        # db_manager.add_note(user_id_example, "This is a new note")
+        # Update a specific note for the user
+        note_id_to_update = 1  # Placeholder for the note ID you want to update
+        new_note_content = "This is the updated content of the note."
+        db_manager.update_note(note_id_to_update, new_note_content)
+
+    # Fetching and displaying all notes for a user
     notes = db_manager.get_user_notes(user_id_example)
     print(notes)
