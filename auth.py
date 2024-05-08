@@ -11,7 +11,8 @@ load_dotenv()
 app = Flask(__name__)
 
 mock_db = {
-    "users": []
+    "users": [],
+    "notes": []  # Added to support notes functionality
 }
 
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
@@ -77,7 +78,46 @@ def login_user():
 @app.route('/users', methods=['GET'])
 @token_required
 def get_all_users(current_user):
-    return jsonify({'users': mock_db["users"]})
+    # Hide the passwords when listing users
+    users_with_hidden_passwords = [{"username": user["username"]} for user in mock_db["users"]]
+    return jsonify({'users': users_with_hidden_passwords})
+
+@app.route('/notes', methods=['POST'])
+@token_required
+def add_note(current_user):
+    data = request.get_json()
+    new_note = {
+        "username": current_user["username"],
+        "title": data["title"],
+        "content": data["content"]
+    }
+    mock_db["notes"].append(new_note)
+    return jsonify({'message' : 'Note created successfully', 'note': new_note}), 201
+
+@app.route('/notes', methods=['GET'])
+@token_required
+def get_notes(current_user):
+    users_notes = [note for note in mock_db["notes"] if note["username"] == current_user["username"]]
+    return jsonify({"notes": users_notes})
+
+@app.route('/notes/<title>', methods=['PUT'])
+@token_required
+def update_note(current_user, title):
+    notes = [note for note in mock_db["notes"] if note["username"] == current_user["username"] and note["title"] == title]
+    if not notes:
+        return jsonify({'message' : 'No note found'}), 404
+
+    data = request.get_json()
+    notes[0]['content'] = data['content']
+    return jsonify({'message' : 'Note updated successfully'})
+
+@app.route('/notes/<title>', methods=['DELETE'])
+@token_required
+def delete_note(current_user, title):
+    global mock_db
+    mock_db["notes"] = [note for note in mock_db["notes"] if not (note["username"] == current_user["username"] and note["title"] == title)]
+
+    return jsonify({'message' : 'Note deleted successfully'})
 
 if __name__ == '__main__':
     app.run(debug=True)
