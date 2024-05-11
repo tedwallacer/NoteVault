@@ -22,56 +22,67 @@ interface ApiResponse<T> {
     message: string;
 }
 
-class ApiService {
-    static loginUser = async (userData: User): Promise<ApiResponse<User>> => {
+class ApiServiceSingleton {
+    private static instance: ApiServiceSingleton;
+
+    private constructor() {}
+
+    static getInstance(): ApiServiceSingleton {
+        if (!ApiServiceSingleton.instance) {
+            ApiServiceSingleton.instance = new ApiServiceSingleton();
+        }
+        return ApiServiceSingleton.instance;
+    }
+
+    async loginUser(userData: User): Promise<ApiResponse<User>> {
         try {
-            const response: AxiosResponse<ApiResponse<User>> = await axios.post(`${API_USER_ENDPOINT}/login`, userData);
+            const response = await axios.post<ApiResponse<User>>(`${API_USER_ENDPOINT}/login`, userData);
             return response.data;
         } catch (error) {
             throw new Error('Failed to login user.');
         }
     }
 
-    static registerUser = async (userData: User): Promise<ApiResponse<User>> => {
+    async registerUser(userData: User): Promise<ApiResponse<User>> {
         try {
-            const response: AxiosResponse<ApiResponse<User>> = await axios.post(`${API_USER_ENDPOINT}/register`, userData);
+            const response = await axios.post<ApiResponse<User>>(`${API_USER_ENDPOINT}/register`, userData);
             return response.data;
         } catch (error) {
             throw new Error('Failed to register user.');
         }
     }
 
-    static createNote = async (noteData: Note): Promise<ApiResponse<Note>> => {
+    async createNote(noteData: Note): Promise<ApiResponse<Note>> {
         try {
-            const response: AxiosResponse<ApiResponse<Note>> = await axios.post(`${API_NOTE_ENDPOINT}/create`, noteData);
+            const response = await axios.post<ApiResponse<Note>>(`${API_NOTE_ENDPOINT}/create`, noteData);
             return response.data;
         } catch (error) {
             throw new Error('Failed to create note.');
         }
     }
 
-    static getAllNotesByUser = async (userId: number): Promise<ApiResponse<Note[]>> => {
+    async getAllNotesByUser(userId: number): Promise<ApiResponse<Note[]>> {
         try {
-            const response: AxiosResponse<ApiResponse<Note[]>> = await axios.get(`${API_NOTE_ENDPOINT}/user/${userId}`);
+            const response = await axios.get<ApiResponse<Note[]>>(`${API_NOTE_ENDPOINT}/user/${userId}`);
             return response.data;
         } catch (error) {
             throw new Error('Failed to get notes.');
         }
     }
 
-    static updateNote = async (noteData: Note): Promise<ApiResponse<Note>> => {
+    async updateNote(noteData: Note): Promise<ApiResponse<Note>> {
         if (!noteData.id) throw new Error('Note ID is required for update.');
         try {
-            const response: AxiosResponse<ApiResponse<Note>> = await axios.put(`${API_NOTE_ENDPOINT}/update/${noteData.id}`, noteData);
+            const response = await axios.put<ApiResponse<Note>>(`${API_NOTE_ENDPOINT}/update/${noteData.id}`, noteData);
             return response.data;
         } catch(error) {
             throw new Error('Failed to update note.');
         }
     }
 
-    static deleteNote = async (noteId: number): Promise<ApiResponse<{}>> => {
+    async deleteNote(noteId: number): Promise<ApiResponse<{}>> {
         try {
-            const response: AxiosResponse<ApiResponse<{}>> = await axios.delete(`${API_NOTE_ENDPOINT}/delete/${noteId}`);
+            const response = await axios.delete<ApiResponse<{}>>(`${API_NOTE_ENDPOINT}/delete/${noteId}`);
             return response.data;
         } catch (error) {
             throw new Error('Failed to delete note.');
@@ -79,4 +90,5 @@ class ApiService {
     }
 }
 
+const ApiService = ApiServiceSingleton.getInstance();
 export default ApiService;
