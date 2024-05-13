@@ -37,6 +37,7 @@ class ApiServiceSingleton {
     async loginUser(userData: User): Promise<ApiResponse<User>> {
         try {
             const response = await axios.post<ApiResponse<User>>(`${API_USER_ENDPOINT}/login`, userData);
+            this.logToConsole(`User Login: ${userData.username}`);
             return response.data;
         } catch (error) {
             throw new Error('Failed to login user.');
@@ -46,6 +47,7 @@ class ApiServiceSingleton {
     async registerUser(userData: User): Promise<ApiResponse<User>> {
         try {
             const response = await axios.post<ApiResponse<User>>(`${API_USER_ENDPOINT}/register`, userData);
+            this.logToConsole(`User Registration: ${userData.username}`);
             return response.data;
         } catch (error) {
             throw new Error('Failed to register user.');
@@ -55,6 +57,7 @@ class ApiServiceSingleton {
     async createNote(noteData: Note): Promise<ApiResponse<Note>> {
         try {
             const response = await axios.post<ApiResponse<Note>>(`${API_NOTE_ENDPOINT}/create`, noteData);
+            this.logToConsole(`Note Creation: ${noteData.title}`);
             return response.data;
         } catch (error) {
             throw new Error('Failed to create note.');
@@ -64,6 +67,7 @@ class ApiServiceSingleton {
     async getAllNotesByUser(userId: number): Promise<ApiResponse<Note[]>> {
         try {
             const response = await axios.get<ApiResponse<Note[]>>(`${API_NOTE_ENDPOINT}/user/${userId}`);
+            this.logToConsole(`Fetching Notes for User ID: ${userId}`);
             return response.data;
         } catch (error) {
             throw new Error('Failed to get notes.');
@@ -74,6 +78,7 @@ class ApiServiceSingleton {
         if (!noteData.id) throw new Error('Note ID is required for update.');
         try {
             const response = await axios.put<ApiResponse<Note>>(`${API_NOTE_ENDPOINT}/update/${noteData.id}`, noteData);
+            this.logToConsole(`Note Update: ${noteData.id}`);
             return response.data;
         } catch(error) {
             throw new Error('Failed to update note.');
@@ -83,10 +88,15 @@ class ApiServiceSingleton {
     async deleteNote(noteId: number): Promise<ApiResponse<{}>> {
         try {
             const response = await axios.delete<ApiResponse<{}>>(`${API_NOTE_ENDPOINT}/delete/${noteId}`);
+            this.logToConsole(`Note Deletion: ${noteId}`);
             return response.data;
         } catch (error) {
             throw new Error('Failed to delete note.');
         }
+    }
+
+    private logToConsole(message: string): void {
+        console.log(`[NoteVault ApiService]: ${message}`);
     }
 }
 
