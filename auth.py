@@ -10,65 +10,65 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# Initialize a simple in-memory "database"
-mock_database = {
+# Initialize a basic in-memory "database"
+in_memory_db = {
     "users": [],
     "notes": []
 }
 
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
 
-# Decorator to enforce token requirement on protected routes
-def token_authentication_required(func):
-    @wraps(func)
-    def decorated_function(*args, **kwargs):
+# Decorator to enforce token authentication on protected routes
+def token_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
         token = request.headers.get('X-Access-Token')
 
         if not token:
-            return jsonify({'message': 'Token is missing!'}), 401
+            return jsonify({'error': 'Token is missing!'}), 401
 
         try:
-            authenticated_data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
-            authenticated_user = next(
-                (user for user in mock_database["users"] if user['username'] == authenticated_data['username']), 
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+            current_user = next(
+                (user for user in in_memory_db["users"] if user['username'] == payload['username']), 
                 None
             )
 
-            if not authenticated_user:
-                return jsonify({'message': 'User not found'}), 401
-        except Exception as error:
-            return jsonify({'message': str(error)}), 401
+            if not current_user:
+                return jsonify({'error': 'User not found'}), 401
+        except Exception as err:
+            return jsonify({'error': str(err)}), 401
 
-        return func(authenticated_user, *args, **kwargs)
+        return f(current_user, *args, **kwargs)
 
-    return decorated_function
+    return decorated
 
 @app.route('/register', methods=['POST'])
-def register_user():
-    registration_data = request.get_json()
+def register():
+    data = request.get_json()
 
-    if any(user['username'] == registration_data['username'] for user in mock_database["users"]):
-        return jsonify({'message': 'User already exists'}), 409
+    if any(user['username'] == data['username'] for user in in_memory_db["users"]):
+        return jsonify({'error': 'Username already taken'}), 409
 
-    hashed_password = generate_password_hash(registration_data['password'], method='sha256')
-    mock_database["users"].append({'username': registration_data['username'], 'password': hashed_password})
+    hashed_pwd = generate_password_hash(data['password'], method='sha256')
+    in_memory_db["users"].append({'username': data['username'], 'password': hashed_pwd})
 
-    return jsonify({'message': 'Registered successfully'}), 201
+    return jsonify({'message': 'User successfully registered'}), 201
 
 @app.route('/login', methods=['POST'])
-def authenticate_user():
-    login_credentials = request.get_json()
+def login():
+    credentials = request.get_json()
 
-    if not login_credentials or not login_credentials.get('username') or not login_credentials.get('password'):
-        return make_response('Could not verify', 401, {'Authentication': 'Login required"'})
+    if not credentials or not credentials.get('username') or not credentials.get('password'):
+        return make_response('Authentication Failed', 401, {'WWW-Authenticate': 'Basic realm="Login Required"'})
 
     user = next(
-        (user for user in mock_database["users"] if user['username'] == login_credentials.get('username')), 
+        (u for u in in_memory_db["users"] if u['username'] == credentials.get('username')), 
         None
     )
 
-    if not user or not check_password_hash(user['password'], login_credentials.get('password')):
-        return make_response('Could not verify', 401, {'Authentication': 'Login required'})
+    if not user or not check_password_hash(user['password'], credentials.get('password')):
+        return make_response('Authentication Failed', 401, {'WWW-Authenticate': 'Basic realm="Login Required"'})
 
     token = jwt.encode(
         {'username': user['username'], 'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=30)},
@@ -77,55 +77,54 @@ def authenticate_user():
 
     return jsonify({'token': token})
 
-# Retrieve all users (token required)
 @app.route('/users', methods=['GET'])
-@token_authentication_required
-def list_all_users(authenticated_user):
-    users_list = [{'username': user['username']} for user in mock_database["users"]]
-    return jsonify({'users': users_list})
+@token_required
+def list_users(current_user):
+    user_list = [{'username': user['username']} for user in in_memory_db["users"]]
+    return jsonify({'users': user_list})
 
 @app.route('/notes', methods=['POST'])
-@token_authentication_required
-def create_note(authenticated_user):
-    note_data = request.get_json()
-    new_note = {
-        "username": authenticated_user['username'],
-        "title": note_data["title"],
-        "content": note_data["content"]
+@token_required
+def add_note(current_user):
+    note_info = request.get_json()
+    note = {
+        "username": current_user['username'],
+        "title": note_info["title"],
+        "content": note_info["content"]
     }
-    mock_database["notes"].append(new_note)
-    return jsonify({'message': 'Note created successfully', 'note': new_note}), 201
+    in_memory_db["notes"].append(note)
+    return jsonify({'message': 'Note successfully added', 'note': note}), 201
 
 @app.route('/notes', methods=['GET'])
-@token_authentication_required
-def list_user_notes(authenticated_user):
-    own_notes = [note for note in mock_database["notes"] if note["username"] == authenticated_user['username']]
-    return jsonify({"notes": own_notes})
+@token_required
+def get_notes(current_user):
+    user_notes = [note for note in in_memory_db["notes"] if note["username"] == current_user['username']]
+    return jsonify({"user_notes": user_notes})
 
 @app.route('/notes/<title>', methods=['PUT'])
-@token_authentication_required
-def update_user_note(authenticated_user, title):
-    note_to_update = next(
-        (note for note in mock_database["notes"] 
-         if note["username"] == authenticated_user['username'] and note["title"] == title), 
+@token_required
+def edit_note(current_user, title):
+    note_found = next(
+        (note for note in in_memory_db["notes"] 
+         if note["username"] == current_user['username'] and note["title"] == title), 
         None
     )
 
-    if not note_to_update:
-        return jsonify({'message': 'No note found'}), 404
+    if not note_found:
+        return jsonify({'error': 'Note not found'}), 404
 
-    update_content = request.get_json()
-    note_to_update['content'] = update_content['content']
-    return jsonify({'message': 'Note updated successfully'})
+    note_content = request.get_json()
+    note_found['content'] = note_content['content']
+    return jsonify({'message': 'Note successfully updated'})
 
 @app.route('/notes/<title>', methods=['DELETE'])
-@token_authentication_required
-def delete_user_note(authenticated_user, title):
-    mock_database["notes"] = [
-        note for note in mock_database["notes"] 
-        if not (note["username"] == authenticated_user['username'] and note["title"] == title)
+@token_required
+def delete_note(current_user, title):
+    in_memory_db["notes"] = [
+        note for note in in_memory_db["notes"] 
+        if not (note["username"] == current_user['username'] and note["title"] == title)
     ]
-    return jsonify({'message': 'Note deleted successfully'})
+    return jsonify({'message': 'Note successfully deleted'})
 
 if __name__ == '__main__':
     app.run(debug=True)
